@@ -369,11 +369,11 @@ body{font-family:var(--fnt);background:var(--body-bg);color:var(--t1);line-heigh
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
         Carregar Base
       </button>
-      <button class="btn btn-outline" onclick="saveHTML()" title="Salva o backup completo e o shell publicável em 'Deploy Netlify' (requer o servidor local ativo — veja 'Iniciar Servidor Local.bat')">
+      <button class="btn btn-outline" onclick="saveHTML()" title="Salva o backup completo e o shell publicável em 'Deploy Netlify' (pede a pasta na primeira vez)">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
         Salvar HTML
       </button>
-      <button class="btn btn-outline" onclick="exportDataFile()" title="Salva dados.xlsx em 'Deploy Netlify' — envie esse arquivo pro GitHub todo mês (requer o servidor local ativo)">
+      <button class="btn btn-outline" onclick="exportDataFile()" title="Salva dados.xlsx em 'Deploy Netlify' — envie esse arquivo pro GitHub todo mês">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
         Exportar dados
       </button>
@@ -452,7 +452,7 @@ body{font-family:var(--fnt);background:var(--body-bg);color:var(--t1);line-heigh
         </div>
         <div class="kpi-val red">R$&nbsp;16.772,05</div>
         
-    <div class="inad-pop" onmouseenter="clearPop()" onmouseleave="schedHideFromPop(this)">
+    <div class="inad-pop" onmouseenter="clearPop()" onmouseleave="schedHideFromPop(this)" style="left: 690px; top: 291.734px;">
       <div class="pop-hdr">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--red-d)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
         <span class="pop-hdr-ttl">Clientes Inadimplentes</span>
@@ -541,7 +541,7 @@ body{font-family:var(--fnt);background:var(--body-bg);color:var(--t1);line-heigh
         </div>
         <div class="kpi-val">R$&nbsp;1.785,99</div>
         
-        <div class="inad-pop" style="min-width:420px;max-width:520px">
+        <div class="inad-pop" style="min-width: 420px; max-width: 520px; left: 1488px; top: 291.734px;">
   <div class="pop-hdr" style="background:linear-gradient(135deg,var(--amber-xl) 0%,rgba(255,255,255,.6) 100%)">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--amber-d)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12V22H4V12"></path><path d="M22 7H2v5h20V7z"></path><path d="M12 22V7"></path><path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z"></path><path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"></path></svg>
     <span class="pop-hdr-ttl" style="color:var(--amber-d)">Clientes Recorrentes Ativos · Jun/2026</span>
@@ -4723,8 +4723,8 @@ function transformWide(ws) {
 /* ═══════════════════════════════════════════════════════════════
    FILE READER
 ═══════════════════════════════════════════════════════════════ */
-// Aplica um workbook já lido (XLSX.read) ao estado DB em memória.
-// Compartilhada entre o upload manual e o carregamento remoto (GitHub).
+// Aplica um workbook já lido (XLSX.read) ao estado DB em memória. Compartilhada
+// entre o upload manual e o carregamento remoto (GitHub).
 function applyWorkbookMutuus(wb) {
   const imported = [];
 
@@ -4803,23 +4803,71 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
 });
 
 /* ═══════════════════════════════════════════════════════════════
-   SAVE HTML — envia para o servidor local ("Iniciar Servidor Local.bat"),
-   que grava:
-   - Dashboard Gerencial Mutuus.html (cópia de trabalho, com os dados)
-   - Deploy Netlify\index.html (shell publicável, SEM dados — busca em
-     dados.xlsx via REMOTE_DATA_URL assim que abre; só precisa ser levado
-     ao GitHub Pages uma vez, veja "Exportar dados" para as atualizações
-     mensais de dado)
-   Se o servidor não estiver rodando (arquivo aberto direto como file://,
-   sem o .bat ativo), cai no download tradicional para a pasta Downloads.
+   PERSISTÊNCIA DA PASTA (File System Access API)
+   Guarda no IndexedDB o handle da pasta raiz do dashboard escolhida pelo
+   usuário, para não pedir de novo a cada clique — só volta a perguntar se
+   a permissão expirar.
+═══════════════════════════════════════════════════════════════ */
+const FS_DB_NAME = 'dashboard-mutuus-fs';
+const FS_STORE   = 'handles';
+const FS_KEY     = 'rootDir';
+
+function fsOpenDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(FS_DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(FS_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+async function fsGetHandle(key) {
+  const db = await fsOpenDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(FS_STORE, 'readonly').objectStore(FS_STORE).get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror   = () => reject(req.error);
+  });
+}
+async function fsSetHandle(key, handle) {
+  const db = await fsOpenDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(FS_STORE, 'readwrite');
+    tx.objectStore(FS_STORE).put(handle, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+async function fsGetRootDir() {
+  let handle = await fsGetHandle(FS_KEY);
+  if (handle) {
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm === 'granted') return handle;
+    const req = await handle.requestPermission({ mode: 'readwrite' });
+    if (req === 'granted') return handle;
+  }
+  handle = await window.showDirectoryPicker({ id: 'dashboard-mutuus-root', mode: 'readwrite' });
+  await fsSetHandle(FS_KEY, handle);
+  return handle;
+}
+async function fsWriteFile(dirHandle, filename, contents) {
+  const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(contents);
+  await writable.close();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SAVE HTML — grava direto nas pastas do Windows via File System Access
+   API (Chrome/Edge): Dashboard Gerencial Mutuus.html (cópia de trabalho,
+   com os dados) e Deploy Netlify\index.html (shell publicável, SEM dados
+   — busca em dados.xlsx via REMOTE_DATA_URL assim que abre; só precisa
+   ser levado ao GitHub Pages uma vez, veja "Exportar dados" para as
+   atualizações mensais de dado). Se o navegador não suportar, cai no
+   download tradicional.
 ═══════════════════════════════════════════════════════════════ */
 async function saveHTML() {
   // Remove quaisquer injeções antigas de "window.__DB__=..." de salvamentos
-  // anteriores (elas se acumulam no <head> a cada save-then-reload, pois
-  // cada uma vira parte permanente do outerHTML). Necessário para o shell:
-  // se uma injeção antiga com dados reais sobrar no HTML publicado, ela
-  // executaria antes do script principal e "vazaria" dados velhos para o
-  // GitHub Pages em vez de buscar os atuais.
+  // anteriores (elas se acumulavam no <head> a cada save-then-reload).
   const baseHtml = document.documentElement.outerHTML
     .replace(/<script>window\.__DB__=[\s\S]*?<\/script>\s*/g, '');
 
