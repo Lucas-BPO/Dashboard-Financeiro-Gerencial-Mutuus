@@ -2931,6 +2931,8 @@ body{font-family:var(--fnt);background:var(--body-bg);color:var(--t1);line-heigh
 </div>
 
 <script>
+const _HTML_TEMPLATE = document.documentElement.outerHTML;
+
 /* ═══════════════════════════════════════════════════════════════
    MOCK DATA
 ═══════════════════════════════════════════════════════════════ */
@@ -4858,17 +4860,140 @@ async function fsWriteFile(dirHandle, filename, contents) {
 
 /* ═══════════════════════════════════════════════════════════════
    SAVE HTML — grava direto nas pastas do Windows via File System Access
-   API (Chrome/Edge): Dashboard Gerencial Mutuus.html (cópia de trabalho,
-   com os dados) e Deploy Netlify\index.html (shell publicável, SEM dados
-   — busca em dados.xlsx via REMOTE_DATA_URL assim que abre; só precisa
-   ser levado ao GitHub Pages uma vez, veja "Exportar dados" para as
-   atualizações mensais de dado). Se o navegador não suportar, cai no
-   download tradicional.
-═══════════════════════════════════════════════════════════════ */
-async function saveHTML() {
-  // Remove quaisquer injeções antigas de "window.__DB__=..." de salvamentos
-  // anteriores (elas se acumulavam no <head> a cada save-then-reload).
-  const baseHtml = document.documentElement.outerHTML
-    .replace(/<script>window\.__DB__=[\s\S]*?<\/script>\s*/g, '');
+   API (Chrome/Edge). Usa o template capturado no topo do script (DOM
+   ainda limpo, sem tabelas/gráficos renderizados) para montar o HTML —
+   evita serializar o DOM ao vivo (que fica enorme depois de renderizado
+   e trava/corrompe a gravação).
+   ═══════════════════════════════════════════════════════════════ */
+const DB_DECL_RE = /let DB = \{saldos:_saldos,inadimplencia:_inadimplencia,faturamentos:_faturamentos,receitas:_receitas,dre:_dre,dfc:_dfc,centrosCusto:_centrosCusto\};/;
 
-  const dashInject = `<div id="_ccTip" style="position: fixed; z-index: 9999; pointer-events: none; display: none; background: var(--surf); border: 1px solid var(--bdr2); border-radius: 10px; padding: 10px 14px; box-shadow: rgba(0, 0, 0, 0.18) 0px 6px 24px; font-family: &quot;Plus Jakarta Sans&quot;, sans-serif; min-width: 140px; max-width: 230px; left: 297px; top: 733px;"><div style="font-size:.6875rem;font-weight:700;color:var(--t1);margin-bottom:5px;word-break:break-word">Departamento Pessoal</div><div style="font-size:.8125rem;font-weight:800;color:var(--navy)">R$&nbsp;352.662,74</div><div style="font-size:.5625rem;color:var(--t3);margin-top:3px">18.8% das despesas</div></div></body></html>
+function buildDashHTML() {
+  const dbLiteral = 'let DB = ' + JSON.stringify(DB) + ';';
+  return _HTML_TEMPLATE.replace(DB_DECL_RE, dbLiteral);
+}
+function buildShellHTML() {
+  const emptyDBLiteral = 'let DB = {saldos:[],inadimplencia:[],faturamentos:[],receitas:[],dre:[],dfc:[],centrosCusto:[]};';
+  return _HTML_TEMPLATE.replace(DB_DECL_RE, emptyDBLiteral);
+}
+
+async function saveHTML() {
+  const dashHtml = buildDashHTML();
+  const shellHtml = buildShellHTML();
+
+  if (!window.showDirectoryPicker) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([dashHtml],{type:'text/html;charset=utf-8'}));
+    a.download = `mutuus-dashboard-${new Date().toISOString().slice(0,10)}.html`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    alert('✅ Arquivo baixado (navegador sem suporte a salvar direto na pasta — use Chrome ou Edge).');
+    return;
+  }
+
+  try {
+    const rootDir = await fsGetRootDir();
+    await fsWriteFile(rootDir, 'Dashboard Gerencial Mutuus.html', dashHtml);
+    const deployDir = await rootDir.getDirectoryHandle('Deploy Netlify', { create: true });
+    await fsWriteFile(deployDir, 'index.html', shellHtml);
+    alert('✅ Backup salvo e shell publicável (Deploy Netlify) atualizado!');
+  } catch (err) {
+    if (err.name === 'AbortError') { alert('Operação cancelada.'); return; }
+    console.error('Falha ao salvar direto na pasta:', err);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([dashHtml],{type:'text/html;charset=utf-8'}));
+    a.download = `mutuus-dashboard-${new Date().toISOString().slice(0,10)}.html`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    alert('⚠️ Não foi possível salvar direto na pasta (baixado via download). ' + (err.message||''));
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   EXPORTAR DADOS (para publicar no GitHub)
+   ═══════════════════════════════════════════════════════════════ */
+async function exportDataFile() {
+  if (!lastXlsxBuffer) { alert('❌ Carregue um Excel primeiro em "Carregar Base".'); return; }
+  if (!window.showDirectoryPicker) { alert('❌ Seu navegador não suporta salvar direto na pasta — use Chrome ou Edge.'); return; }
+  try {
+    const rootDir = await fsGetRootDir();
+    const deployDir = await rootDir.getDirectoryHandle('Deploy Netlify', { create: true });
+    await fsWriteFile(deployDir, 'dados.xlsx', lastXlsxBuffer);
+    alert('✅ dados.xlsx pronto em Deploy Netlify — envie esse arquivo para o GitHub.');
+  } catch (err) {
+    if (err.name === 'AbortError') { alert('Cancelado.'); return; }
+    console.error('Erro ao exportar dados:', err);
+    alert('❌ Erro ao exportar dados: ' + err.message);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CARREGAMENTO REMOTO (versão publicada sem dados embutidos)
+   ═══════════════════════════════════════════════════════════════ */
+async function idbGetCacheMutuus(key) {
+  const db = await fsOpenDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(FS_STORE, 'readonly').objectStore(FS_STORE).get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror   = () => reject(req.error);
+  });
+}
+async function idbSetCacheMutuus(key, value) {
+  const db = await fsOpenDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(FS_STORE, 'readwrite');
+    tx.objectStore(FS_STORE).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+async function loadRemoteData() {
+  const cacheKey = 'remoteXlsxCache';
+  try {
+    const sep = REMOTE_DATA_URL.includes('?') ? '&' : '?';
+    const res = await fetch(REMOTE_DATA_URL + sep + 't=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = await res.arrayBuffer();
+    const wb = XLSX.read(new Uint8Array(buf), { type: 'array', cellDates: true });
+    applyWorkbookMutuus(wb);
+    lastXlsxBuffer = buf;
+    idbSetCacheMutuus(cacheKey, buf).catch(() => {});
+  } catch (err) {
+    console.error('Falha ao buscar dados remotos:', err);
+    try {
+      const cached = await idbGetCacheMutuus(cacheKey);
+      if (cached) {
+        const wb = XLSX.read(new Uint8Array(cached), { type: 'array', cellDates: true });
+        applyWorkbookMutuus(wb);
+        lastXlsxBuffer = cached;
+      }
+    } catch (e2) { /* sem cache disponível */ }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   INIT
+   ═══════════════════════════════════════════════════════════════ */
+function init() {
+  if(window.__DB__) {
+    const s=window.__DB__;
+    if(s.saldos?.length) DB.saldos=s.saldos;
+    if(s.inadimplencia?.length) DB.inadimplencia=s.inadimplencia;
+    if(s.faturamentos?.length) DB.faturamentos=s.faturamentos;
+    if(s.receitas?.length) DB.receitas=s.receitas;
+    if(s.dre?.length) DB.dre=s.dre;
+    if(s.dfc?.length) DB.dfc=s.dfc;
+    if(s.centrosCusto?.length) DB.centrosCusto=s.centrosCusto;
+  }
+
+  if (isDBEmpty(DB) && REMOTE_DATA_URL) {
+    loadRemoteData();
+    return;
+  }
+
+  initFilters();
+  renderKPIs();
+  renderSections();
+}
+
+init();
+</script></body></html>
