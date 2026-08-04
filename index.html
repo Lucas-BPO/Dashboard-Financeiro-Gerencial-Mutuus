@@ -39,7 +39,7 @@ body{font-family:var(--fnt);background:var(--body-bg);color:var(--t1);line-heigh
 /* ── HEADER ── */
 .app-header{background:rgba(255,255,255,.97);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--bdr);position:sticky;top:0;z-index:200;box-shadow:0 2px 16px rgba(15,23,42,.07)}
 .app-header::after{content:'';display:block;height:3px;background:linear-gradient(90deg,var(--blue) 0%,#6366F1 40%,#C9A96E 75%,#9A7B2A 100%);position:absolute;bottom:-1px;left:0;right:0}
-.hdr-inner{max-width:1700px;margin:0 auto;padding:0 28px;height:116px;display:flex;align-items:center;gap:14px}
+.hdr-inner{width:100%;padding:0 28px;height:116px;display:flex;align-items:center;gap:14px}
 .logo-wrap{display:flex;align-items:center;gap:11px;flex-shrink:0;text-decoration:none;cursor:pointer}
 .logo-img{height:109px;width:auto;object-fit:contain;border-radius:6px;filter:drop-shadow(0 2px 8px rgba(0,0,0,.12))}
 .logo-fallback{width:44px;height:44px;background:linear-gradient(135deg,var(--navy) 0%,var(--blue) 100%);border-radius:12px;display:none;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(37,99,235,.4)}
@@ -70,7 +70,7 @@ body{font-family:var(--fnt);background:var(--body-bg);color:var(--t1);line-heigh
 .btn-success:active{transform:translateY(0)}
 
 /* ── WRAPPER ── */
-.app-wrap{max-width:1700px;margin:0 auto;padding:22px 28px 56px}
+.app-wrap{width:100%;padding:22px 28px 56px}
 
 /* ── HEADER FILTERS (dropdowns) ── */
 .fdrop{position:relative}
